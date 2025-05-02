@@ -37,7 +37,7 @@ def load_patient(key):
     return infos, df
 
 # Charger les données
-df = pd.read_csv("C:/Users/fetti/Desktop/CAEN/gait-dash/walking_data_analysis_caen.csv")
+df = pd.read_csv("walking_data_analysis_caen.csv")
 df['DateTime'] = pd.to_datetime(df['DateTime'])
 
 # --- Infos patient (exemple, à adapter selon ton CSV) ---
