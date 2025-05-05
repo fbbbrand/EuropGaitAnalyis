@@ -10,93 +10,35 @@ import io
 from dash.exceptions import PreventUpdate
 from dash.dependencies import Input, Output, State
 
-# Utiliser le chemin relatif au fichier app.py
-PATIENTS_DIR = os.path.join(os.path.dirname(__file__), "patients")
+PATIENTS_DIR = "patients"
 os.makedirs(PATIENTS_DIR, exist_ok=True)
-
-# Variable globale pour stocker les données des patients
-PATIENTS_DATA = {}
-
-def load_all_patients():
-    """Charge les données de tous les patients au démarrage"""
-    global PATIENTS_DATA
-    PATIENTS_DATA.clear()
-    print(f"Chargement des patients depuis : {PATIENTS_DIR}")
-    print(f"Fichiers trouvés : {os.listdir(PATIENTS_DIR)}")
-    
-    for filename in os.listdir(PATIENTS_DIR):
-        if filename.endswith('.json'):
-            patient_id = filename[:-5]  # Enlever l'extension .json
-            try:
-                print(f"Chargement du patient : {patient_id}")
-                # Charger les infos du patient
-                with open(os.path.join(PATIENTS_DIR, filename), 'r', encoding='utf-8') as f:
-                    patient_info = json.load(f)
-                # Charger les données CSV si elles existent
-                csv_path = os.path.join(PATIENTS_DIR, f"{patient_id}.csv")
-                if os.path.exists(csv_path):
-                    df = pd.read_csv(csv_path)
-                    df['DateTime'] = pd.to_datetime(df['DateTime'])
-                    PATIENTS_DATA[patient_id] = {
-                        'info': patient_info,
-                        'data': df
-                    }
-                    print(f"Patient {patient_id} chargé avec succès")
-                else:
-                    print(f"Fichier CSV manquant pour {patient_id}")
-            except Exception as e:
-                print(f"Erreur lors du chargement du patient {patient_id}: {e}")
-
-# Charger les patients au démarrage
-load_all_patients()
 
 # Identifiants autorisés (à adapter)
 VALID_USERS = {"admin": "motdepasse123"}
 
 def list_patients():
-    """Retourne la liste des patients disponibles"""
-    print(f"Liste des patients disponibles : {list(PATIENTS_DATA.keys())}")
-    return [{"label": k.replace("_", " "), "value": k} for k in PATIENTS_DATA.keys()]
+    # Retourne la liste des patients (fichiers .json)
+    return [f[:-5] for f in os.listdir(PATIENTS_DIR) if f.endswith(".json")]
 
 def save_patient(prenom, nom, infos, df):
-    global PATIENTS_DATA
     key = f"{prenom}_{nom}".replace(" ", "_")
     # Sauvegarde infos
     with open(os.path.join(PATIENTS_DIR, f"{key}.json"), "w", encoding="utf-8") as f:
         json.dump(infos, f)
     # Sauvegarde CSV
     df.to_csv(os.path.join(PATIENTS_DIR, f"{key}.csv"), index=False)
-    # Mettre à jour les données en mémoire
-    PATIENTS_DATA[key] = {
-        'info': infos,
-        'data': df
-    }
 
 def load_patient(key):
-    global PATIENTS_DATA
-    if key not in PATIENTS_DATA:
-        # Si le patient n'est pas en mémoire, essayer de le charger
-        try:
-            with open(os.path.join(PATIENTS_DIR, f"{key}.json"), encoding="utf-8") as f:
-                infos = json.load(f)
-            df = pd.read_csv(os.path.join(PATIENTS_DIR, f"{key}.csv"))
-            df['DateTime'] = pd.to_datetime(df['DateTime'])
-            PATIENTS_DATA[key] = {
-                'info': infos,
-                'data': df
-            }
-        except Exception as e:
-            print(f"Erreur lors du chargement du patient {key}: {e}")
-            return None, None
-    return PATIENTS_DATA[key]['info'], PATIENTS_DATA[key]['data']
+    # Charge infos et CSV
+    with open(os.path.join(PATIENTS_DIR, f"{key}.json"), encoding="utf-8") as f:
+        infos = json.load(f)
+    df = pd.read_csv(os.path.join(PATIENTS_DIR, f"{key}.csv"))
+    df['DateTime'] = pd.to_datetime(df['DateTime'])
+    return infos, df
 
 # Charger les données
-csv_path = os.path.join(os.path.dirname(__file__), "walking_data_analysis_caen.csv")
-if os.path.exists(csv_path):
-    df = pd.read_csv(csv_path)
-    df['DateTime'] = pd.to_datetime(df['DateTime'])
-else:
-    df = None  # Ou gérez le cas où il n'y a pas de CSV par défaut
+df = pd.read_csv("C:/Users/fetti/Desktop/CAEN/gait-dash/walking_data_analysis_caen.csv")
+df['DateTime'] = pd.to_datetime(df['DateTime'])
 
 # --- Infos patient (exemple, à adapter selon ton CSV) ---
 patient_info = {}
@@ -163,7 +105,6 @@ dates = sorted(daily_stats.keys())
 
 # --- Dash app ---
 app = dash.Dash(__name__)
-server = app.server
 app.title = "Gait Analysis Dash"
 app.config.suppress_callback_exceptions = True
 #app._favicon = "🦵"
@@ -519,7 +460,7 @@ def main_app_layout():
             html.Label("Sélectionner une fiche patient existante :", style={"fontWeight": "bold", "color": "#2CC1AA"}),
             dcc.Dropdown(
                 id="patient-select",
-                options=list_patients(),
+                options=[{"label": k.replace("_", " "), "value": k} for k in list_patients()],
                 placeholder="Choisir un patient...",
                 style={"marginBottom": "1.5em"}
             ),
@@ -655,10 +596,7 @@ def handle_patient(n_clicks, selected_patient, prenom, nom, age, taille, poids, 
     # Si sélection d'un patient existant
     if ctx.triggered and ctx.triggered[0]['prop_id'].startswith("patient-select"):
         if selected_patient:
-            print(f"Patient sélectionné : {selected_patient}")
             infos, df = load_patient(selected_patient)
-            if infos is None or df is None:
-                return {"display": "block"}, {"display": "block"}, "", "", "Erreur lors du chargement du patient", list_patients(), html.Div()
             summary = make_patient_summary(infos)
             analysis = make_analysis_content(df)
             graphs = html.Div([
@@ -697,27 +635,27 @@ def handle_patient(n_clicks, selected_patient, prenom, nom, age, taille, poids, 
                 summary,              # patient-summary
                 analysis,             # analysis-section (indicateurs de perf)
                 "",                   # patient-feedback
-                list_patients(),      # patient-select options
+                [{"label": k.replace("_", " "), "value": k} for k in list_patients()],  # patient-select options
                 graphs                # graphs-section (les deux autres graphes)
             )
         else:
-            return {"display": "block"}, {"display": "block"}, "", "", "", list_patients(), html.Div()
+            return {"display": "block"}, {"display": "block"}, "", "", "", [{"label": k.replace("_", " "), "value": k} for k in list_patients()], html.Div()
     # Si création d'un nouveau patient
     if not (prenom and nom and age and taille and poids and patho and contents):
-        return {"display": "block"}, {"display": "block"}, "", "", "Veuillez remplir tous les champs et uploader un CSV.", list_patients(), html.Div()
+        return {"display": "block"}, {"display": "block"}, "", "", "Veuillez remplir tous les champs et uploader un CSV.", [{"label": k.replace("_", " "), "value": k} for k in list_patients()], html.Div()
     try:
         taille_m = float(taille) / 100
         poids_kg = float(poids)
         imc = poids_kg / (taille_m ** 2)
     except Exception:
-        return {"display": "block"}, {"display": "block"}, "", "", "Erreur dans la saisie de la taille ou du poids.", list_patients(), html.Div()
+        return {"display": "block"}, {"display": "block"}, "", "", "Erreur dans la saisie de la taille ou du poids.", [{"label": k.replace("_", " "), "value": k} for k in list_patients()], html.Div()
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
     try:
         df_local = pd.read_csv(io.StringIO(decoded.decode('utf-8')))
         df_local['DateTime'] = pd.to_datetime(df_local['DateTime'])
     except Exception as e:
-        return {"display": "block"}, {"display": "block"}, "", "", f"Erreur lors de la lecture du CSV : {e}", list_patients(), html.Div()
+        return {"display": "block"}, {"display": "block"}, "", "", f"Erreur lors de la lecture du CSV : {e}", [{"label": k.replace("_", " "), "value": k} for k in list_patients()], html.Div()
     infos = {
         "prenom": prenom, "nom": nom, "age": age, "taille": taille, "poids": poids, "imc": round(imc, 1), "patho": patho
     }
@@ -760,7 +698,7 @@ def handle_patient(n_clicks, selected_patient, prenom, nom, age, taille, poids, 
         summary,              # patient-summary
         analysis,             # analysis-section (indicateurs de perf)
         "",                   # patient-feedback
-        list_patients(),      # patient-select options
+        [{"label": k.replace("_", " "), "value": k} for k in list_patients()],  # patient-select options
         graphs                # graphs-section (les deux autres graphes)
     )
 
